@@ -1,12 +1,12 @@
 module github.com/kubeflow/notebooks/workspaces/controller
 
-go 1.22.12
+go 1.25.0
 
 require (
 	github.com/go-logr/logr v1.4.2
 	github.com/onsi/ginkgo/v2 v2.19.0
 	github.com/onsi/gomega v1.33.1
-	golang.org/x/time v0.3.0
+	golang.org/x/time v0.15.0
 	google.golang.org/protobuf v1.34.2
 	istio.io/api v1.22.8
 	istio.io/client-go v1.22.8
