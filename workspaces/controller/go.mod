@@ -10,11 +10,11 @@ require (
 	google.golang.org/protobuf v1.34.2
 	istio.io/api v1.22.8
 	istio.io/client-go v1.22.8
-	k8s.io/api v0.31.0
-	k8s.io/apimachinery v0.31.0
-	k8s.io/client-go v0.31.0
+	k8s.io/api v0.31.14
+	k8s.io/apimachinery v0.31.14
+	k8s.io/client-go v0.31.14
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
-	sigs.k8s.io/controller-runtime v0.19.1
+	sigs.k8s.io/controller-runtime v0.19.7
 )
 
 require (
