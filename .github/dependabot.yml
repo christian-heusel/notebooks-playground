@@ -1,0 +1,127 @@
+version: 2
+
+open-pull-requests-limit: 5
+updates:
+
+  ########################
+  # --> notebooks-v2 <-- #
+  ########################
+
+  - package-ecosystem: "gomod"
+    target-branch: "notebooks-v2"
+    cooldown:
+      default-days: 7
+    directories:
+      - "/workspaces/backend"
+      - "/workspaces/controller"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    target-branch: "notebooks-v2"
+    cooldown:
+      default-days: 7
+    directory: "/workspaces/frontend"
+    schedule:
+      interval: "weekly"
+    # Group mod-arch-* packages together for easier review
+    groups:
+      mod-arch-packages:
+        patterns:
+          - "mod-arch-*"
+
+  - package-ecosystem: "docker"
+    target-branch: "notebooks-v2"
+    cooldown:
+      default-days: 7
+    # find . -name "Dockerfile" | xargs -i dirname {}| grep -v example
+    directories:
+      - "/workspaces/controller"
+      - "/workspaces/backend"
+      - "/workspaces/frontend"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    target-branch: "notebooks-v2"
+    cooldown:
+      default-days: 7
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  ########################
+  # --> notebooks-v1 <-- #
+  ########################
+
+  - package-ecosystem: "pip"
+    target-branch: "notebooks-v1"
+    cooldown:
+      default-days: 7
+    # find . -name "requirements.txt" | xargs -i dirname {} | grep -v example
+    directories:
+      - "/components/crud-web-apps/jupyter/backend/"
+      - "/components/crud-web-apps/tensorboards/backend/"
+      - "/components/crud-web-apps/volumes/backend/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "gomod"
+    target-branch: "notebooks-v1"
+    cooldown:
+      default-days: 7
+    # find . -name "go.mod" | xargs -i dirname {}
+    directories:
+      - "/components/notebook-controller"
+      - "/components/pvcviewer-controller"
+      - "/components/tensorboard-controller"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    target-branch: "notebooks-v1"
+    cooldown:
+      default-days: 7
+    # ind . -name "package.json" | xargs -i dirname {}
+    directories:
+      - "/components/crud-web-apps/common/frontend/kubeflow-common-lib"
+      - "/components/crud-web-apps/common/frontend/kubeflow-common-lib/projects/kubeflow"
+      - "/components/crud-web-apps/jupyter/frontend"
+      - "/components/crud-web-apps/tensorboards/frontend"
+      - "/components/crud-web-apps/volumes/frontend"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    target-branch: "notebooks-v1"
+    cooldown:
+      default-days: 7
+    # find . -name "Dockerfile" | xargs -i dirname {}| grep -v example
+    directories:
+      - "/components/crud-web-apps/jupyter"
+      - "/components/crud-web-apps/tensorboards"
+      - "/components/crud-web-apps/volumes"
+      - "/components/notebook-controller"
+      - "/components/pvcviewer-controller"
+      - "/components/tensorboard-controller"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    target-branch: "notebooks-v1"
+    cooldown:
+      default-days: 7
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  ########################
+  # -->     main     <-- #
+  ########################
+
+  - package-ecosystem: "github-actions"
+    cooldown:
+      default-days: 7
+    directory: "/"
+    schedule:
+      interval: "weekly"
