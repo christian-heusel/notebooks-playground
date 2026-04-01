@@ -61,7 +61,7 @@
     "@angular/compiler-cli": "~14.3.0",
     "@angular/language-service": "~14.3.0",
     "@kubernetes/client-node": "^0.16.3",
-    "@types/jasmine": "~3.6.0",
+    "@types/jasmine": "~3.10.19",
     "@types/jasminewd2": "^2.0.9",
     "@types/lodash": "^4.17.6",
     "@types/lodash-es": "^4.17.6",
