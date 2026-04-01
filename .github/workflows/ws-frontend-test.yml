@@ -55,7 +55,7 @@ jobs:
         run: npm run test
 
       - name: Upload Cypress test report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: "!cancelled() && steps.run-tests.outcome != 'skipped'"
         with:
           name: cypress-report
@@ -64,14 +64,14 @@ jobs:
             workspaces/frontend/src/__tests__/cypress/results/mocked/junit-report.xml
 
       - name: Upload Cypress screenshots (on failure)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: "failure() && steps.run-tests.outcome == 'failure'"
         with:
           name: cypress-screenshots
           path: workspaces/frontend/src/__tests__/cypress/results/mocked/screenshots
 
       - name: Upload Cypress video recordings (on failure)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: "failure() && steps.run-tests.outcome == 'failure'"
         with:
           name: cypress-videos
