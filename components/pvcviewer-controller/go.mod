@@ -3,7 +3,7 @@ module github.com/kubeflow/notebooks/components/pvcviewer-controller
 go 1.24.12
 
 require (
-	github.com/go-logr/logr v1.4.1
+	github.com/go-logr/logr v1.4.3
 	github.com/onsi/ginkgo/v2 v2.17.1
 	github.com/onsi/gomega v1.33.0
 	go.uber.org/zap v1.27.0
