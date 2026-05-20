@@ -1,6 +1,6 @@
 # --- Build the backend kubeflow-wheel ---
 # Python 3.12 upgrade
-FROM python:3.12-slim AS backend-kubeflow-wheel
+FROM python:3.14.5-slim AS backend-kubeflow-wheel
 
 WORKDIR /src
 
@@ -43,7 +43,7 @@ COPY --from=frontend-kubeflow-lib /src/dist/kubeflow/ ./node_modules/kubeflow/
 RUN npm run build -- --output-path=./dist/default --configuration=production
 
 # Web App
-FROM python:3.12-slim
+FROM python:3.14.5-slim
 
 WORKDIR /package
 COPY --from=backend-kubeflow-wheel /src .
