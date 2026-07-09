@@ -21,223 +21,109 @@ jobs:
     steps:
       - name: Handle slash commands
         id: handle-commands
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        with:
-          script: |
-            const parseIssueNumber = (input) => {
-              if (!input) return null;
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+          PARENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
 
-              // Handle plain number
-              if (/^\d+$/.test(input)) {
-                return input;
-              }
+          parse_issue_number() {
+            local input="$1"
+            if [[ "$input" =~ ^[0-9]+$ ]]; then
+              echo "$input"
+            elif [[ "$input" =~ ^#([0-9]+)$ ]]; then
+              echo "${BASH_REMATCH[1]}"
+            elif [[ "$input" =~ /issues/([0-9]+)$ ]]; then
+              echo "${BASH_REMATCH[1]}"
+            else
+              echo "Could not parse issue number from input: '$input'" >&2
+              return 1
+            fi
+          }
 
-              // Handle #number format
-              const hashMatch = input.match(/^#(\d+)$/);
-              if (hashMatch) {
-                return hashMatch[1];
-              }
+          declare -a add_issues=()
+          declare -a remove_issues=()
 
-              // Handle URL format
-              const urlMatch = input.match(/\/issues\/(\d+)$/);
-              if (urlMatch) {
-                return urlMatch[1];
-              }
+          while IFS= read -r line; do
+            for action in add remove; do
+              prefix="/${action}-sub-issue"
+              if [[ "$line" == "$prefix"* ]]; then
+                rest="${line#"$prefix"}"
+                for token in $rest; do
+                  issue_number=$(parse_issue_number "$token")
+                  if [[ "$action" == "add" ]]; then
+                    add_issues+=("$issue_number")
+                  else
+                    remove_issues+=("$issue_number")
+                  fi
+                done
+              fi
+            done
+          done <<< "$COMMENT_BODY"
 
-              throw new Error(`Could not parse issue number from input: '${input}'`);
-            };
+          if [[ ${#add_issues[@]} -eq 0 && ${#remove_issues[@]} -eq 0 ]]; then
+            echo "No valid operations found"
+            exit 0
+          fi
 
-            const getIssueNodeId = async (owner, repo, issueNumber) => {
-              const response = await github.graphql(`
-                query {
-                  repository(owner: "${owner}", name: "${repo}") {
-                    issue(number: ${issueNumber}) {
-                      id
-                      title
-                    }
-                  }
-                }
-              `);
-              return {
-                id: response.repository.issue.id,
-                title: response.repository.issue.title
-              };
-            };
+          parent_title=$(gh issue view "$PARENT_ISSUE_NUMBER" --json title --jq '.title')
 
-            const performSubIssueMutation = async (action, parentIssueNodeId, childIssueNodeId) => {
-              const mutationField = `${action}SubIssue`;
+          {
+            echo ':mag: **Sub-issue Operation Preview**'
+            echo ''
+            echo "The following operations will be performed on issue #${PARENT_ISSUE_NUMBER} (${parent_title}) at the request of @${COMMENT_USER}:"
+            echo ''
+            if [[ ${#add_issues[@]} -gt 0 ]]; then
+              echo '### Adding Sub-issues:'
+              for i in "${add_issues[@]}"; do echo "- #${i}"; done
+              echo ''
+            fi
+            if [[ ${#remove_issues[@]} -gt 0 ]]; then
+              echo '### Removing Sub-issues:'
+              for i in "${remove_issues[@]}"; do echo "- #${i}"; done
+              echo ''
+            fi
+            echo '_This is a preview of the changes. The actual operations will be executed in the background._'
+          } > preview_body.md
 
-              const mutation = `
-                mutation {
-                  ${mutationField}(input: {
-                    issueId: "${parentIssueNodeId}",
-                    subIssueId: "${childIssueNodeId}"
-                  }) {
-                    clientMutationId
-                    issue {
-                      id
-                      title
-                    }
-                    subIssue {
-                      id
-                      title
-                    }
-                  }
-                }
-              `;
+          preview_url=$(gh issue comment "$PARENT_ISSUE_NUMBER" --body-file preview_body.md | tail -n1)
 
-              try {
-                const response = await github.graphql(mutation);
-                return response;
-              } catch (error) {
-                throw new Error(error.message);
-              }
-            };
+          for i in "${add_issues[@]}"; do
+            gh issue edit "$PARENT_ISSUE_NUMBER" --add-sub-issue "$i"
+          done
+          for i in "${remove_issues[@]}"; do
+            gh issue edit "$PARENT_ISSUE_NUMBER" --remove-sub-issue "$i"
+          done
 
-            const collectSubIssueOperations = async (line, action, owner, repo) => {
-              const commandPrefix = `/${action}-sub-issue`;
-              if (!line.startsWith(commandPrefix)) return [];
+          {
+            echo ':white_check_mark: **GitHub Action Succeeded**'
+            echo ''
+            echo "All [sub-issue operations](${preview_url}) requested by @${COMMENT_USER} have been completed successfully."
+            echo ''
+          } > success_body.md
 
-              const args = line.replace(commandPrefix, '').trim().split(/\s+/);
-              const operations = [];
-
-              for (const issue of args) {
-                const childIssueNumber = parseIssueNumber(issue);
-                const childIssue = await getIssueNodeId(owner, repo, childIssueNumber);
-                operations.push({
-                  action,
-                  issueNumber: childIssueNumber,
-                  title: childIssue.title,
-                  nodeId: childIssue.id
-                });
-              }
-
-              return operations;
-            };
-
-            const formatOperationsList = (operations, action) => {
-              if (operations.length === 0) return [];
-
-              return [
-                `### ${action} Sub-issues:`,
-                ...operations.map(op => `- #${op.issueNumber}`),
-                ''
-              ];
-            };
-
-            try {
-              const { owner, repo } = context.repo;
-              const parentIssueNumber = context.payload.issue.number;
-              const commentBody = context.payload.comment.body;
-
-              // Get parent issue node ID and title
-              const parentIssue = await getIssueNodeId(owner, repo, parentIssueNumber);
-
-              // Collect all operations first
-              const lines = commentBody.split('\n');
-              const operations = [];
-
-              for (const line of lines) {
-                operations.push(...await collectSubIssueOperations(line, 'add', owner, repo));
-                operations.push(...await collectSubIssueOperations(line, 'remove', owner, repo));
-              }
-
-              if (operations.length === 0) {
-                return; // No valid operations found
-              }
-
-              // Create preview comment
-              const previewBodyParts = [
-                ':mag: **Sub-issue Operation Preview**',
-                '',
-                `The following operations will be performed on issue #${parentIssueNumber} (${parentIssue.title}) at the request of @${context.payload.comment.user.login}:`,
-                ''
-              ];
-
-              // Group operations by action for display
-              const addOperations = operations.filter(op => op.action === 'add');
-              const removeOperations = operations.filter(op => op.action === 'remove');
-
-              previewBodyParts.push(
-                ...formatOperationsList(addOperations, 'Adding'),
-                ...formatOperationsList(removeOperations, 'Removing')
-              );
-
-              previewBodyParts.push('_This is a preview of the changes. The actual operations will be executed in the background._');
-
-              // Post preview comment
-              const previewComment = await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: parentIssueNumber,
-                body: previewBodyParts.join('\n')
-              });
-
-              // Execute operations in original order
-              for (const op of operations) {
-                await performSubIssueMutation(op.action, parentIssue.id, op.nodeId);
-              }
-
-              // Post success comment
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: parentIssueNumber,
-                body: [
-                  ':white_check_mark: **GitHub Action Succeeded**',
-                  '',
-                  `All [sub-issue operations](${previewComment.data.html_url}) requested by @${context.payload.comment.user.login} have been completed successfully.`,
-                  ''
-                ].join('\n')
-              });
-
-            } catch (error) {
-              core.setOutput('error_message', error.message);
-              core.setFailed(error.message);
-            }
+          gh issue comment "$PARENT_ISSUE_NUMBER" --body-file success_body.md
 
       - name: Post error comment if failure
         if: failure()
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        with:
-          script: |
-            try {
-              const commentUrl = context.payload.comment.html_url;
-              const runId = context.runId;
-              const { owner, repo } = context.repo;
-              const errorMessage = `${{ steps.handle-commands.outputs.error_message }}`;
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          PARENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          run_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-              const errorBodyParts = [
-                ':x: **GitHub Action Failed**',
-                '',
-                `The workflow encountered an error while processing [your comment](${commentUrl}) to manage sub-issues.`,
-                '',
-                `:point_right: [View the run](https://github.com/${owner}/${repo}/actions/runs/${runId})`,
-                ''
-              ];
+          {
+            echo ':x: **GitHub Action Failed**'
+            echo ''
+            echo "The workflow encountered an error while processing [your comment](${COMMENT_URL}) to manage sub-issues."
+            echo ''
+            echo ":point_right: [View the run](${run_url})"
+            echo ''
+            echo 'Please check the logs and try again, or open a bug report if the issue persists.'
+          } > error_body.md
 
-              if (errorMessage && errorMessage !== '') {
-                errorBodyParts.push(
-                  '<details>',
-                  '<summary>Error details</summary>',
-                  '',
-                  '```',
-                  errorMessage,
-                  '```',
-                  '',
-                  '</details>',
-                  ''
-                );
-              }
-
-              errorBodyParts.push('Please check the logs and try again, or open a bug report if the issue persists.');
-
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: context.payload.issue.number,
-                body: errorBodyParts.join('\n')
-              });
-            } catch (error) {
-              core.setFailed(`Failed to post error comment: ${error.message}`);
-            }
+          gh issue comment "$PARENT_ISSUE_NUMBER" --body-file error_body.md
