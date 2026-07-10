@@ -15,6 +15,8 @@ jobs:
       && (
           contains(github.event.comment.body, '/add-sub-issue')
           || contains(github.event.comment.body, '/remove-sub-issue')
+          || contains(github.event.comment.body, '/add-blocked-by')
+          || contains(github.event.comment.body, '/remove-blocked-by')
       )
     runs-on: ubuntu-latest
 
@@ -53,6 +55,7 @@ jobs:
                   repository(owner: "${owner}", name: "${repo}") {
                     issue(number: ${issueNumber}) {
                       id
+                      databaseId
                       title
                     }
                   }
@@ -60,6 +63,7 @@ jobs:
               `);
               return {
                 id: response.repository.issue.id,
+                databaseId: response.repository.issue.databaseId,
                 title: response.repository.issue.title
               };
             };
@@ -94,6 +98,26 @@ jobs:
               }
             };
 
+            const performBlockedByMutation = async (action, owner, repo, parentIssueNumber, childIssueId) => {
+              const route = action === 'add'
+                ? 'POST /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by'
+                : 'DELETE /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by/{issue_id}';
+
+              try {
+                await github.request(route, {
+                  owner,
+                  repo,
+                  issue_number: parentIssueNumber,
+                  issue_id: childIssueId,
+                  headers: {
+                    'X-GitHub-Api-Version': '2026-03-10'
+                  }
+                });
+              } catch (error) {
+                throw new Error(error.message);
+              }
+            };
+
             const collectSubIssueOperations = async (line, action, owner, repo) => {
               const commandPrefix = `/${action}-sub-issue`;
               if (!line.startsWith(commandPrefix)) return [];
@@ -105,6 +129,7 @@ jobs:
                 const childIssueNumber = parseIssueNumber(issue);
                 const childIssue = await getIssueNodeId(owner, repo, childIssueNumber);
                 operations.push({
+                  type: 'sub-issue',
                   action,
                   issueNumber: childIssueNumber,
                   title: childIssue.title,
@@ -115,11 +140,33 @@ jobs:
               return operations;
             };
 
-            const formatOperationsList = (operations, action) => {
+            const collectBlockedByOperations = async (line, action, owner, repo) => {
+              const commandPrefix = `/${action}-blocked-by`;
+              if (!line.startsWith(commandPrefix)) return [];
+
+              const args = line.replace(commandPrefix, '').trim().split(/\s+/);
+              const operations = [];
+
+              for (const issue of args) {
+                const childIssueNumber = parseIssueNumber(issue);
+                const childIssue = await getIssueNodeId(owner, repo, childIssueNumber);
+                operations.push({
+                  type: 'blocked-by',
+                  action,
+                  issueNumber: childIssueNumber,
+                  title: childIssue.title,
+                  databaseId: childIssue.databaseId
+                });
+              }
+
+              return operations;
+            };
+
+            const formatOperationsList = (operations, action, label) => {
               if (operations.length === 0) return [];
 
               return [
-                `### ${action} Sub-issues:`,
+                `### ${action} ${label}:`,
                 ...operations.map(op => `- #${op.issueNumber}`),
                 ''
               ];
@@ -140,6 +187,8 @@ jobs:
               for (const line of lines) {
                 operations.push(...await collectSubIssueOperations(line, 'add', owner, repo));
                 operations.push(...await collectSubIssueOperations(line, 'remove', owner, repo));
+                operations.push(...await collectBlockedByOperations(line, 'add', owner, repo));
+                operations.push(...await collectBlockedByOperations(line, 'remove', owner, repo));
               }
 
               if (operations.length === 0) {
@@ -148,19 +197,21 @@ jobs:
 
               // Create preview comment
               const previewBodyParts = [
-                ':mag: **Sub-issue Operation Preview**',
+                ':mag: **Issue Relationship Operation Preview**',
                 '',
                 `The following operations will be performed on issue #${parentIssueNumber} (${parentIssue.title}) at the request of @${context.payload.comment.user.login}:`,
                 ''
               ];
 
-              // Group operations by action for display
-              const addOperations = operations.filter(op => op.action === 'add');
-              const removeOperations = operations.filter(op => op.action === 'remove');
+              // Group operations by type and action for display
+              const subIssueOperations = operations.filter(op => op.type === 'sub-issue');
+              const blockedByOperations = operations.filter(op => op.type === 'blocked-by');
 
               previewBodyParts.push(
-                ...formatOperationsList(addOperations, 'Adding'),
-                ...formatOperationsList(removeOperations, 'Removing')
+                ...formatOperationsList(subIssueOperations.filter(op => op.action === 'add'), 'Adding', 'Sub-issues'),
+                ...formatOperationsList(subIssueOperations.filter(op => op.action === 'remove'), 'Removing', 'Sub-issues'),
+                ...formatOperationsList(blockedByOperations.filter(op => op.action === 'add'), 'Adding', 'Blocked-by'),
+                ...formatOperationsList(blockedByOperations.filter(op => op.action === 'remove'), 'Removing', 'Blocked-by')
               );
 
               previewBodyParts.push('_This is a preview of the changes. The actual operations will be executed in the background._');
@@ -175,7 +226,11 @@ jobs:
 
               // Execute operations in original order
               for (const op of operations) {
-                await performSubIssueMutation(op.action, parentIssue.id, op.nodeId);
+                if (op.type === 'sub-issue') {
+                  await performSubIssueMutation(op.action, parentIssue.id, op.nodeId);
+                } else {
+                  await performBlockedByMutation(op.action, owner, repo, parentIssueNumber, op.databaseId);
+                }
               }
 
               // Post success comment
@@ -186,7 +241,7 @@ jobs:
                 body: [
                   ':white_check_mark: **GitHub Action Succeeded**',
                   '',
-                  `All [sub-issue operations](${previewComment.data.html_url}) requested by @${context.payload.comment.user.login} have been completed successfully.`,
+                  `All [operations](${previewComment.data.html_url}) requested by @${context.payload.comment.user.login} have been completed successfully.`,
                   ''
                 ].join('\n')
               });
@@ -210,7 +265,7 @@ jobs:
               const errorBodyParts = [
                 ':x: **GitHub Action Failed**',
                 '',
-                `The workflow encountered an error while processing [your comment](${commentUrl}) to manage sub-issues.`,
+                `The workflow encountered an error while processing [your comment](${commentUrl}) to manage issue relationships.`,
                 '',
                 `:point_right: [View the run](https://github.com/${owner}/${repo}/actions/runs/${runId})`,
                 ''
