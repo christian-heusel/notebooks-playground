@@ -66,6 +66,7 @@ func init() {
 }
 
 func main() {
+	os.Setenv("LINT_ANNOTATIONS_VERIFICATION", "1") // TEMP: throwaway errcheck violation for CI annotation verification, will be reverted
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
